@@ -7,12 +7,18 @@ import textwrap
 from functools import partial
 from subprocess import CalledProcessError
 from pathlib import Path
-
 from shutil import get_terminal_size
+from tempfile import NamedTemporaryFile
+
+from clonevirtualenv import clone_virtualenv
+
+from pew._utils import (check_call, invoke, expandpath, own, env_bin_dir,
+                        check_path, temp_environ)
+from pew._print_utils import print_virtualenvs
 
 windows = sys.platform == 'win32'
 
-from clonevirtualenv import clone_virtualenv
+
 if not windows:
     try:
         # Try importing these packages if available
@@ -29,7 +35,7 @@ if not windows:
             except OSError:
                 pass
             return ListCommand()
-    except:
+    except:  # noqa: E722
         # create mock commands
         InstallCommand = ListPythons = LocatePython = UninstallCommand = \
             lambda : sys.exit('You need to install the pythonz extra.  pip install pew[pythonz]')
@@ -40,9 +46,6 @@ else:
 
     import shellingham
 
-from pew._utils import (check_call, invoke, expandpath, own, env_bin_dir,
-                        check_path, temp_environ, NamedTemporaryFile)
-from pew._print_utils import print_virtualenvs
 
 err = partial(print, file=sys.stderr)
 
@@ -53,6 +56,12 @@ else:
         os.environ.get('XDG_DATA_HOME', '~/.local/share'), 'virtualenvs')
 workon_home = expandpath(
     os.environ.get('WORKON_HOME', default_home))
+
+
+PIP_CMD_ARGS = {
+    'pip': ['pip'],
+    'uv': ['uv', 'pip'],
+}
 
 
 def makedirs_and_symlink_if_needed(workon_home):
@@ -213,11 +222,11 @@ def shell(env, cwd=None):
         return fork_shell(env, [shell], cwd)
 
 
-def mkvirtualenv(envname, python=None, packages=[], project=None,
-                 requirements=None, rest=[]):
+def mkvirtualenv(envname, python=None, packages=None, project=None,
+                 requirements=None, pip_cmd=None, rest=None):
 
     if python:
-        rest = ["--python=%s" % python] + rest
+        rest = ["--python=%s" % python] + (rest or [])
 
     path = (workon_home / envname).absolute()
 
@@ -227,12 +236,13 @@ def mkvirtualenv(envname, python=None, packages=[], project=None,
         rmvirtualenvs([envname])
         raise
     else:
+        pip_command = PIP_CMD_ARGS.get(pip_cmd, ['pip'])
         if project:
             setvirtualenvproject(envname, project.absolute())
         if requirements:
-            inve(envname, 'pip', 'install', '-r', str(expandpath(requirements)))
+            inve(envname, *(pip_command + ['install', '-r', str(expandpath(requirements))]))
         if packages:
-            inve(envname, 'pip', 'install', *packages)
+            inve(envname, *(pip_command + ['install', *packages]))
 
 
 def mkvirtualenv_argparser():
@@ -249,6 +259,13 @@ requirements file to install a base set of packages into the new environment.')
     return parser
 
 
+def add_pip_cmd_argument(parser):
+    parser.add_argument('-c', '--pip-cmd', choices=list(PIP_CMD_ARGS.keys()), default='pip', dest='pip_cmd', 
+                        help='The pip command used to install packages (default: %(default)s).  \
+                        Possible values: "uv" - use "uv pip", "pip" - use pip')
+
+
+
 def new_cmd(argv):
     """Create a new environment, in $WORKON_HOME."""
     parser = mkvirtualenv_argparser()
@@ -256,11 +273,19 @@ def new_cmd(argv):
 project directory to associate with the new environment.')
 
     parser.add_argument('envname')
+    add_pip_cmd_argument(parser)
     args, rest = parser.parse_known_args(argv)
     project = expandpath(args.project) if args.project else None
 
-    mkvirtualenv(args.envname, args.python, args.packages, project,
-                 args.requirements, rest)
+    mkvirtualenv(
+        envname=args.envname,
+        python=args.python,
+        packages=args.packages,
+        project=project,
+        requirements=args.requirements,
+        pip_cmd=args.pip_cmd,
+        rest=rest,
+    )
     if args.activate:
         shell(args.envname)
 
@@ -564,6 +589,7 @@ def mkproject_cmd(argv):
         return
 
     parser = mkvirtualenv_argparser()
+    add_pip_cmd_argument(parser)
     parser.add_argument('envname')
     parser.add_argument(
         '-t', action='append', default=[], dest='templates', help='Multiple \
@@ -583,8 +609,15 @@ Create it or set PROJECT_HOME to an existing directory.' % projects_home)
     if project.exists():
         sys.exit('Project %s already exists.' % args.envname)
 
-    mkvirtualenv(args.envname, args.python, args.packages, project.absolute(),
-                 args.requirements, rest)
+    mkvirtualenv(
+        envname=args.envname,
+        python=args.python,
+        packages=args.packages,
+        project=project.absolute(),
+        requirements=args.requirements,
+        pip_cmd=args.pip_cmd,
+        rest=rest,
+    )
 
     project.mkdir()
 
@@ -598,14 +631,21 @@ Create it or set PROJECT_HOME to an existing directory.' % projects_home)
 def mktmpenv_cmd(argv):
     """Create a temporary virtualenv."""
     parser = mkvirtualenv_argparser()
+    add_pip_cmd_argument(parser)
     env = '.'
     while (workon_home / env).exists():
         env = hex(random.getrandbits(64))[2:-1]
 
     args, rest = parser.parse_known_args(argv)
 
-    mkvirtualenv(env, args.python, args.packages, requirements=args.requirements,
-                 rest=rest)
+    mkvirtualenv(
+        envname=env,
+        python=args.python,
+        packages=args.packages,
+        requirements=args.requirements,
+        pip_cmd=args.pip_cmd,
+        rest=rest,
+    )
     print('This is a temporary environment. It will be deleted when you exit')
     try:
         if args.activate:
@@ -736,7 +776,7 @@ from inside your shell's configuration file.
 In this case, for further details please see: https://github.com/berdario/pew#the-environment-doesnt-seem-to-be-activated''')
 
 
-def first_run_setup():
+def first_run_setup(cmd_args):
     shell = supported_shell()
     if shell:
         if shell == 'fish':
@@ -752,7 +792,7 @@ def first_run_setup():
             print("It seems that you're running pew for the first time\n"
                   "If you want source shell competions and update your prompt, "
                   "Add the following line to your shell config file:\n %s" % source_cmd)
-        print('\nWill now continue with the command:', *sys.argv[1:])
+        print('\nWill now continue with the command:', *cmd_args)
         input('[enter]')
 
 def update_config_file(rcpath, source_cmd):
@@ -787,25 +827,30 @@ def print_commands(cmds):
             print(' ' + cmd)
 
 
-def pew():
+def pew(cmd_args):
     first_run = makedirs_and_symlink_if_needed(workon_home)
     if first_run and sys.stdin.isatty():
-        first_run_setup()
+        first_run_setup(cmd_args)
 
     cmds = dict((cmd[:-4], fun)
                 for cmd, fun in globals().items() if cmd.endswith('_cmd'))
-    if sys.argv[1:]:
-        if sys.argv[1] in cmds:
-            command = cmds[sys.argv[1]]
+    
+    if cmd_args:
+        if cmd_args[0] in cmds:
+            command = cmds[cmd_args[0]]
             try:
-                return command(sys.argv[2:])
+                return command(cmd_args[1:])
             except CalledProcessError as e:
                 return e.returncode
             except KeyboardInterrupt:
                 pass
         else:
-            err("ERROR: command", sys.argv[1], "does not exist.")
+            err("ERROR: command", cmd_args[0], "does not exist.")
             print_commands(cmds)
             sys.exit(1)
     else:
         print_commands(cmds)
+
+
+def main():
+    return pew(sys.argv[1:])

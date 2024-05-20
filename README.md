@@ -240,7 +240,7 @@ When invoked without arguments `pew` will output the list of all commands with e
 
 Create a new environment, in the WORKON_HOME.
 
-`usage: pew new [-hd] [-p PYTHON] [-i PACKAGES] [-a PROJECT] [-r REQUIREMENTS] envname`
+`usage: pew new [-hd] [-p PYTHON] [-c {pip,uv}] [-i PACKAGES] [-a PROJECT] [-r REQUIREMENTS] envname`
 
 The new environment is automatically activated after being initialized.
 
@@ -249,6 +249,8 @@ The `-a` option can be used to associate an existing project directory with the 
 The `-i` option can be used to install one or more packages (by repeating the option) after the environment is created.
 
 The `-r` option can be used to specify a text file listing packages to be installed. The argument value is passed to `pip -r` to be installed.
+
+The `-c` option can be used to pass an alternative package installer. Currently supporting [uv](https://github.com/astral-sh/uv).
 
 ### workon ###
 
@@ -262,7 +264,7 @@ If no `envname` is given the list of available environments is printed to stdout
 
 Create a temporary virtualenv.
 
-`usage: pew mktmpenv [-h] [-p PYTHON] [-i PACKAGES] [-a PROJECT] [-r REQUIREMENTS]`
+`usage: pew mktmpenv [-h] [-p PYTHON] [-c {pip,uv}] [-i PACKAGES] [-a PROJECT] [-r REQUIREMENTS]`
 
 ### ls ###
 
@@ -362,7 +364,7 @@ Controls whether the active virtualenv will access the packages in the global Py
 
 Create a new virtualenv in the `WORKON_HOME` and project directory in `PROJECT_HOME`.
 
-`usage: pew mkproject [-hd] [-p PYTHON] [-i PACKAGES] [-a PROJECT] [-r REQUIREMENTS] [-t TEMPLATES] [-l] envname`
+`usage: pew mkproject [-hd] [-p PYTHON] [-c {pip,uv}] [-i PACKAGES] [-a PROJECT] [-r REQUIREMENTS] [-t TEMPLATES] [-l] envname`
 
 The template option may be repeated to have several templates used to create a new project. The templates are applied in the order named on the command line. All other options are passed to `pew new` to create a virtual environment with the same name as the project.
 

@@ -1,3 +1,3 @@
-from pew.pew import pew
+from pew.pew import main
 
-pew()
+main()

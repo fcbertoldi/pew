@@ -78,7 +78,7 @@ setup(
         'deb': DebCommand
     },
     entry_points={
-        'console_scripts': ['pew = pew.pew:pew']},
+        'console_scripts': ['pew = pew.pew:main']},
     classifiers=[
         'Programming Language :: Python :: 3',
         'Intended Audience :: Developers',

@@ -1,13 +1,11 @@
 import os
 import sys
 import locale
-from codecs import getwriter
 from contextlib import contextmanager
 from subprocess import check_call, Popen, PIPE
 from collections import namedtuple
-from functools import partial, wraps
+from functools import partial
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from shutil import which
 
 windows = sys.platform == 'win32'
